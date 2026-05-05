@@ -35,6 +35,10 @@
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
+
+    <!-- Masukkan library Google Identity Services -->
+    <script src="https://accounts.google.com/gsi/client" async defer onload="gisLoaded()"></script>
+
 </head>
 <body class="bg-neu-bg min-h-screen flex items-center justify-center font-sans p-4">
 
@@ -96,10 +100,12 @@
                     <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd" /></svg>
                 </button>
                 <span class="text-sm font-bold tracking-widest text-neu-textDark">OMNITUNE</span>
-                <!-- Tombol Tambah Sumber -->
-                <button id="btn-add-source" class="w-10 h-10 rounded-full shadow-neu-btn flex items-center justify-center active:shadow-neu-inset">
+                
+                <!-- TUTORIAL: Tambahkan onclick="loginDanMuatLibrary()" di tombol ini -->
+                <button id="btn-add-source" onclick="loginDanMuatLibrary()" class="w-10 h-10 rounded-full shadow-neu-btn flex items-center justify-center active:shadow-neu-inset hover:text-green-500 transition-colors">
                     <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
                 </button>
+
             </div>
             <div class="flex items-center bg-neu-bg shadow-neu-inset rounded-2xl px-4 py-3 mb-2">
                 <svg class="h-5 w-5 text-neu-text mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
@@ -109,7 +115,7 @@
 
         <div id="song-list-container" class="flex-1 overflow-y-auto no-scrollbar px-6 pb-24">
             <!-- List Lagu akan dirender di sini -->
-            <div class="text-center text-neu-text mt-10 text-sm">Klik ikon di kanan atas untuk memuat folder musik Anda.</div>
+            <div class="text-center text-neu-text mt-10 text-sm">Klik ikon + di kanan atas untuk menghubungkan Google Drive Anda.</div>
         </div>
 
         <!-- Mini Player -->
@@ -133,6 +139,38 @@
     <!-- LOGIKA JAVASCRIPT & ALUR DATA                -->
     <!-- ========================================== -->
     <script>
+        // --- KONFIGURASI GOOGLE IDENTITY SERVICES ---
+        // PENTING: Ganti dengan Client ID Google Cloud Console Anda!
+        const CLIENT_ID = '1000879481177-jk68479a8p8tdh5b3q7qtvfufar17q5b.apps.googleusercontent.com';
+        const SCOPES = 'https://www.googleapis.com/auth/drive.readonly';
+        
+        let tokenClient;
+        let userAccessToken = null;
+
+        // Fungsi ini otomatis dipanggil saat library Google selesai dimuat di HTML
+        function gisLoaded() {
+            tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: CLIENT_ID,
+                scope: SCOPES,
+                callback: (tokenResponse) => {
+                    if (tokenResponse && tokenResponse.access_token) {
+                        userAccessToken = tokenResponse.access_token;
+                        console.log("Login Google Berhasil! Token diamankan.");
+                        tarikLaguLangsungDariGoogle(); 
+                    }
+                },
+            });
+        }
+
+        function loginDanMuatLibrary() {
+            if (tokenClient) {
+                tokenClient.requestAccessToken({prompt: 'consent'});
+            } else {
+                Swal.fire('Sistem Memuat', 'Library Google belum siap, tunggu sebentar.', 'info');
+            }
+        }
+
+
         // --- STATE & DATA ---
         let playlist = [];
         let currentIndex = -1;
@@ -140,11 +178,16 @@
         // --- DOM Elements ---
         const viewPlayer = document.getElementById('view-player');
         const viewLibrary = document.getElementById('view-library');
-        const audioPlayer = document.getElementById('audio-player');
+        const audioPlayer = document.getElementById('audio-player'); // Mesin audio lokal
         
+        if (!window.omniAudio) {
+            window.omniAudio = new Audio(); // Mesin audio Google Drive
+        }
+
         // Ikon SVG
         const playIcon = '<path d="M8 5v14l11-7z" />';
         const pauseIcon = '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />';
+
 
         // --- NAVIGASI ANTAR VIEW ---
         document.getElementById('btn-go-library').addEventListener('click', () => {
@@ -156,6 +199,7 @@
             viewLibrary.classList.add('hidden');
             viewPlayer.classList.remove('hidden');
         });
+
 
         // --- TAMBAH SUMBER (SWEETALERT) ---
         document.getElementById('btn-add-source').addEventListener('click', () => {
@@ -179,30 +223,20 @@
                     // Eksekusi pemilih Folder Lokal
                     document.getElementById('folder-input').click();
                 } else if (result.dismiss === Swal.DismissReason.cancel) {
-                    // Eksekusi redirect ke CodeIgniter untuk login Google Drive
-                    Swal.fire({
-                        html: '<p class="text-neu-text text-sm">Menghubungkan ke Google...</p>',
-                        background: '#222222',
-                        showConfirmButton: false,
-                        allowOutsideClick: false,
-                        customClass: { popup: 'rounded-[24px] shadow-neu border-none w-64' },
-                        didOpen: () => {
-                            Swal.showLoading();
-                            // Redirect ke server lokal CI4
-                            window.location.href = 'http://localhost:8080/auth/login';
-                        }
-                    });
+                    // Eksekusi Pure Frontend Google Login
+                    loginDanMuatLibrary();
                 }
             });
         });
 
-        // --- MEMBACA FOLDER & MERENDER LIBRARY ---
+
+        // --- MEMBACA FOLDER LOKAL & MERENDER ---
         document.getElementById('folder-input').addEventListener('change', function(e) {
             const files = Array.from(e.target.files).filter(f => f.type.startsWith('audio/') || f.name.endsWith('.mp3'));
             
             if(files.length === 0) return Swal.fire({ html: '<p class="text-neu-textDark">Kosong</p>', background: '#222222', showConfirmButton: false, timer: 1500 });
 
-            playlist = files; // Simpan ke state global
+            playlist = files; 
             const container = document.getElementById('song-list-container');
             container.innerHTML = '';
 
@@ -219,250 +253,47 @@
                         </div>
                     </div>
                 `;
-                // Menambahkan event listener saat lagu di list diklik
                 div.addEventListener('click', () => playSong(index));
                 container.appendChild(div);
             });
         });
 
-        // --- LOGIKA PEMUTARAN (SINKRONISASI) ---
+
+        // --- LOGIKA PEMUTARAN LOKAL ---
         function playSong(index) {
+            // Hentikan mesin Drive jika sedang menyala
+            if (window.omniAudio && !window.omniAudio.paused) window.omniAudio.pause();
+
             currentIndex = index;
             const file = playlist[index];
             const title = file.name.replace(/\.[^/.]+$/, "");
             
-            // Set sumber audio
             audioPlayer.src = URL.createObjectURL(file);
             audioPlayer.play();
 
-            // Update UI Player Utama
             document.getElementById('player-title').innerText = title;
             document.getElementById('player-artist').innerText = "Memori Lokal";
             document.getElementById('icon-play-pause').innerHTML = pauseIcon;
 
-            // Update UI Mini Player
             document.getElementById('mini-player').classList.remove('hidden');
             document.getElementById('mini-title').innerText = title;
             document.getElementById('icon-mini-play').innerHTML = pauseIcon;
 
-            // Update warna teks di Library
             document.querySelectorAll('[id^="title-"]').forEach(el => el.classList.remove('text-neu-accent'));
-            document.getElementById(`title-${index}`).classList.add('text-neu-accent', 'text-neu-textDark');
+            const titleEl = document.getElementById(`title-${index}`);
+            if(titleEl) titleEl.classList.add('text-neu-accent', 'text-neu-textDark');
 
-            // --- TAMBAHAN: MEDIA SESSION API (METADATA) ---
             if ('mediaSession' in navigator) {
-                navigator.mediaSession.metadata = new MediaMetadata({
-                    title: title,
-                    artist: 'Memori Lokal - OmniTune',
-                    album: 'Local Folder',
-                    artwork: [
-                        // Menggunakan gambar placeholder yang sama dengan UI kita
-                        { src: 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=96&auto=format&fit=crop', sizes: '96x96', type: 'image/jpeg' },
-                        { src: 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=256&auto=format&fit=crop', sizes: '256x256', type: 'image/jpeg' },
-                        { src: 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=512&auto=format&fit=crop', sizes: '512x512', type: 'image/jpeg' }
-                    ]
-                });
+                navigator.mediaSession.metadata = new MediaMetadata({ title: title, artist: 'Memori Lokal - OmniTune' });
             }
         }
 
-        // --- KONTROL TOMBOL PLAY/PAUSE (Utama & Mini) ---
-        function togglePlay() {
-            if (!audioPlayer.src) return;
-            if (audioPlayer.paused) {
-                audioPlayer.play();
-                document.getElementById('icon-play-pause').innerHTML = pauseIcon;
-                document.getElementById('icon-mini-play').innerHTML = pauseIcon;
-            } else {
-                audioPlayer.pause();
-                document.getElementById('icon-play-pause').innerHTML = playIcon;
-                document.getElementById('icon-mini-play').innerHTML = playIcon;
-            }
-        }
-        document.getElementById('btn-play-pause').addEventListener('click', togglePlay);
-        document.getElementById('btn-mini-play').addEventListener('click', (e) => {
-            e.stopPropagation(); // Mencegah klik tembus ke div mini-player
-            togglePlay();
-        });
 
-        // --- KONTROL TOMBOL NEXT / PREV ---
-        document.getElementById('btn-next').addEventListener('click', () => {
-            if(currentIndex < playlist.length - 1) playSong(currentIndex + 1);
-        });
-        document.getElementById('btn-prev').addEventListener('click', () => {
-            if(currentIndex > 0) playSong(currentIndex - 1);
-        });
-
-        // Lanjut lagu otomatis jika selesai
-        audioPlayer.addEventListener('ended', () => {
-            if(currentIndex < playlist.length - 1) playSong(currentIndex + 1);
-            else togglePlay(); // Berhenti jika lagu terakhir
-        });
-
-        // --- PROGRESS BAR & WAKTU ---
-        const formatTime = sec => isNaN(sec) ? "0:00" : `${Math.floor(sec / 60)}:${Math.floor(sec % 60).toString().padStart(2, '0')}`;
-        
-        audioPlayer.addEventListener('loadedmetadata', () => {
-            document.getElementById('time-duration').innerText = formatTime(audioPlayer.duration);
-        });
-
-        audioPlayer.addEventListener('timeupdate', () => {
-            document.getElementById('time-current').innerText = formatTime(audioPlayer.currentTime);
-            if(audioPlayer.duration) {
-                document.getElementById('progress-fill').style.width = `${(audioPlayer.currentTime / audioPlayer.duration) * 100}%`;
-            }
-        });
-
-        document.getElementById('progress-container').addEventListener('click', (e) => {
-            if(audioPlayer.duration) {
-                audioPlayer.currentTime = (e.offsetX / e.currentTarget.clientWidth) * audioPlayer.duration;
-            }
-        });
-
-        // Klik body mini player untuk buka player utama
-        document.getElementById('mini-player').addEventListener('click', () => {
-            viewLibrary.classList.add('hidden');
-            viewPlayer.classList.remove('hidden');
-        });
-
-        // --- REGISTRASI SERVICE WORKER (PWA) ---
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js')
-                .then(registration => {
-                    console.log('ServiceWorker sukses didaftarkan dengan scope: ', registration.scope);
-                })
-                .catch(err => {
-                    console.log('Pendaftaran ServiceWorker gagal: ', err);
-                });
-            });
-        }
-
-        // --- MEDIA SESSION API (KONTROL LAYAR KUNCI & NOTIFIKASI) ---
-        if ('mediaSession' in navigator) {
-            navigator.mediaSession.setActionHandler('play', () => {
-                if (!audioPlayer.src) return;
-                audioPlayer.play();
-                document.getElementById('icon-play-pause').innerHTML = pauseIcon;
-                document.getElementById('icon-mini-play').innerHTML = pauseIcon;
-            });
-
-            navigator.mediaSession.setActionHandler('pause', () => {
-                if (!audioPlayer.src) return;
-                audioPlayer.pause();
-                document.getElementById('icon-play-pause').innerHTML = playIcon;
-                document.getElementById('icon-mini-play').innerHTML = playIcon;
-            });
-
-            navigator.mediaSession.setActionHandler('previoustrack', () => {
-                if(currentIndex > 0) playSong(currentIndex - 1);
-            });
-
-            navigator.mediaSession.setActionHandler('nexttrack', () => {
-                if(currentIndex < playlist.length - 1) playSong(currentIndex + 1);
-            });
-        }
-
-        // --- DETEKSI & INGAT STATUS LOGIN GOOGLE DRIVE ---
-        function checkAuthStatus() {
-            const urlParams = new URLSearchParams(window.location.search);
-            
-            // Jika baru saja kembali dari login Google
-            if (urlParams.get('auth') === 'success') {
-                // Simpan ingatan ke browser
-                localStorage.setItem('drive_connected', 'true');
-                
-                // Tampilkan SweetAlert2 (Sesuai SOP Anda)
-                Swal.fire({
-                    html: `
-                        <div class="flex flex-col items-center">
-                            <div class="w-12 h-12 bg-neu-bg rounded-full shadow-neu flex items-center justify-center mb-4">
-                                <i class="fa-solid fa-cloud-check text-green-500"></i>
-                            </div>
-                            <p class="text-neu-textDark font-bold">Terhubung!</p>
-                            <p class="text-neu-text text-xs mt-1">Sesi Drive berhasil disimpan.</p>
-                        </div>
-                    `,
-                    background: '#222222',
-                    showConfirmButton: false,
-                    timer: 2000,
-                    customClass: { popup: 'rounded-[32px] shadow-neu border-none w-72' }
-                });
-
-                // Bersihkan URL
-                const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
-                window.history.replaceState({}, document.title, cleanUrl);
-                
-                // Langsung tarik lagu
-                fetchDriveSongs();
-            } 
-            // Jika halaman direload dan browser masih ingat sudah login
-            else if (localStorage.getItem('drive_connected') === 'true') {
-                fetchDriveSongs();
-            }
-        }
-
-        // Pastikan event listener ini ada di bagian bawah skrip Anda
-        window.addEventListener('load', checkAuthStatus);
-
-        async function fetchDriveSongs() {
-                try {
-                    // GANTI URL INI dengan Web App URL dari GAS Anda, jangan lupa tambah ?action=getSongs di belakangnya
-                    const gasUrl = 'https://script.google.com/macros/s/AKfycbxeU51wQ2LHe_ZOvbg9bNi3UPSJ-wn_zYdZrjanDY8cYt8bND3B-8UhotAr3_aayJFA/exec?action=getSongs';
-                    
-                    // Gunakan mode cors, tapi tidak perlu kirim kredensial cookie lagi (karena GAS tipe "Anyone" sudah membukanya)
-                    const response = await fetch(gasUrl, {
-                        method: 'GET',
-                        mode: 'cors'
-                    });
-                    
-                    const data = await response.json();
-
-                    if (data.status === 'success') {
-                        console.log('Daftar Lagu Drive Berhasil Ditarik via GAS:', data.songs);
-                        renderLibrary(data.songs, data.access_token); 
-                    } else {
-                        console.error('Gagal mengambil lagu:', data.message);
-                    }
-                } catch (error) {
-                    console.error('CORS atau Network Error:', error);
-                }
-            }
-
-        // --- MESIN PEMUTAR AUDIO ---
-        if (!window.omniAudio) {
-            window.omniAudio = new Audio(); 
-        }
-
-        // --- UPDATE PROGRESS BAR ---
-        // Letakkan tepat di bawah inisialisasi omniAudio dan di ATAS fungsi playMusic()
-        window.omniAudio.addEventListener('timeupdate', () => {
-            const progressFill = document.getElementById('progress-fill');
-            const current = document.getElementById('time-current');
-            const duration = document.getElementById('time-duration');
-
-            if (window.omniAudio.duration) {
-                const percent = (window.omniAudio.currentTime / window.omniAudio.duration) * 100;
-                if (progressFill) progressFill.style.width = percent + '%';
-
-                // Format waktu menit:detik
-                const formatTime = (time) => {
-                    const mins = Math.floor(time / 60);
-                    const secs = Math.floor(time % 60);
-                    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
-                };
-                
-                if (current) current.innerText = formatTime(window.omniAudio.currentTime);
-                if (duration) duration.innerText = formatTime(window.omniAudio.duration);
-            }
-        });
-
-        // --- FUNGSI PLAY MUSIC ---
-        async function playMusic(fileId, songTitle, accessToken) {
-             // ... (kode Anda yang berisi Swal.fire dan fetch blob tetap di sini) ...
-            // Gunakan SweetAlert2 untuk status buffering
+        // --- TARIK LAGU DARI GOOGLE DRIVE ---
+        async function tarikLaguLangsungDariGoogle() {
             Swal.fire({
-                title: 'Menyiapkan Audio...',
-                text: songTitle,
+                title: 'Mencari Lagu...',
+                text: 'Menyelami Google Drive Anda',
                 background: '#222222',
                 color: '#E0E0E0',
                 showConfirmButton: false,
@@ -470,125 +301,163 @@
             });
 
             try {
-                // Tarik file menggunakan Fetch API agar kita bisa menyisipkan Header Authorization
-                const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+                const url = 'https://www.googleapis.com/drive/v3/files?q=mimeType contains "audio/" and trashed = false&fields=files(id,name,mimeType,size,webContentLink)&pageSize=100';
+                const response = await fetch(url, {
                     method: 'GET',
-                    headers: {
-                        'Authorization': `Bearer ${accessToken}`
-                    }
+                    headers: { 'Authorization': `Bearer ${userAccessToken}` }
                 });
 
-                if (!response.ok) {
-                    throw new Error(`Google API menolak akses: HTTP ${response.status}`);
+                const data = await response.json();
+
+                if (response.ok) {
+                    Swal.close();
+                    renderLibrary(data.files, userAccessToken); 
+                } else {
+                    throw new Error(data.error.message);
                 }
-
-                // Ubah respons menjadi data biner (Blob)
-                const audioBlob = await response.blob();
-                
-                // Buat URL lokal sementara di dalam browser dari data biner tersebut
-                const audioUrl = URL.createObjectURL(audioBlob);
-
-                // Masukkan URL lokal tersebut ke mesin audio
-                window.omniAudio.src = audioUrl;
-                window.omniAudio.play()
-                    .then(() => {
-                        Swal.close();
-                        
-                        // Update UI View Player
-                        document.getElementById('player-title').innerText = songTitle;
-                        document.getElementById('player-artist').innerText = "Google Drive";
-                        
-                        // Ubah ikon ke Pause
-                        const iconEl = document.getElementById('icon-play-pause');
-                        iconEl.innerHTML = '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>'; // Ikon Pause
-                    });
-
             } catch (error) {
-                console.error("Gagal mengunduh audio:", error);
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Akses Ditolak',
-                    text: 'Gagal menarik data dari Google Drive.',
-                    background: '#222222',
-                    color: '#E0E0E0',
-                    showConfirmButton: false,
-                    timer: 3000
-                });
+                Swal.fire({ icon: 'error', title: 'Gagal Memuat', text: error.message, background: '#222222', color: '#E0E0E0' });
             }
         }
 
-        function togglePlayPause() {
-            if (!window.omniAudio || !window.omniAudio.src) return;
 
-            const iconEl = document.getElementById('icon-play-pause');
-
-            if (window.omniAudio.paused) {
-                window.omniAudio.play();
-                iconEl.innerHTML = '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>'; // Ikon Pause
-            } else {
-                window.omniAudio.pause();
-                iconEl.innerHTML = '<path d="M8 5v14l11-7z"/>'; // Ikon Play
-            }
-        }
-
-        // Pasang listener ke tombol yang ada di HTML Anda
-        document.getElementById('btn-play-pause').addEventListener('click', togglePlayPause);
-
+        // --- RENDER LIBRARY GOOGLE DRIVE ---
         function renderLibrary(songs, accessToken) {
-            // Menggunakan ID yang sesuai dengan HTML Anda
             const songListContainer = document.getElementById('song-list-container'); 
-            
-            if (!songListContainer) {
-                console.error('Wadah daftar lagu tidak ditemukan di HTML!');
-                return;
-            }
+            if (!songListContainer) return;
 
-            // Bersihkan tulisan "Klik ikon di kanan atas..."
             songListContainer.innerHTML = ''; 
 
             if (songs.length === 0) {
-                songListContainer.innerHTML = '<div class="text-center text-neu-text mt-10 text-sm">Tidak ada file audio ditemukan di Google Drive.</div>';
+                songListContainer.innerHTML = '<div class="text-center text-neu-text mt-10 text-sm">Tidak ada file audio ditemukan.</div>';
                 return;
             }
 
             songs.forEach(song => {
-                // Menghilangkan ekstensi (misal: .mp3) dari nama untuk tampilan yang lebih rapi
                 const cleanName = song.name.replace(/\.[^/.]+$/, ""); 
-
                 const songItem = document.createElement('div');
-                // Menggunakan styling Neumorphism yang senada
                 songItem.className = 'flex items-center justify-between p-4 mb-3 bg-neu-bg rounded-xl shadow-neu hover:shadow-neu-inset cursor-pointer transition-all';
                 songItem.innerHTML = `
                     <div class="flex items-center gap-4 overflow-hidden">
                         <div class="w-10 h-10 flex-shrink-0 rounded-full shadow-neu-inset flex items-center justify-center text-neu-textDark">
-                            <i class="fa-solid fa-music"></i>
+                            <i class="fa-solid fa-cloud"></i>
                         </div>
                         <div class="flex-1 min-w-0">
-                            <!-- truncate akan memotong teks yang panjang menjadi "..." -->
                             <h4 class="text-sm font-bold text-neu-textDark truncate">${cleanName}</h4>
                             <p class="text-xs text-neu-text truncate">Google Drive</p>
                         </div>
                     </div>
-                    <button class="w-8 h-8 flex-shrink-0 ml-2 rounded-full shadow-neu flex items-center justify-center text-neu-text hover:text-green-500 transition-colors">
-                        <i class="fa-solid fa-play text-xs"></i>
-                    </button>
                 `;
                 
-                // Event listener saat lagu diklik
-                songItem.onclick = () => {
-                    console.log("Mengirim lagu ke mesin audio:", cleanName);
-                    
-                    // Kita oper ID File (bukan URL) beserta Access Token-nya
-                    playMusic(song.id, cleanName, accessToken);
-                };
-
+                songItem.onclick = () => { playMusic(song.id, cleanName, accessToken); };
                 songListContainer.appendChild(songItem);
             });
         }
 
-        // Panggil fungsi ini jika login berhasil
-        if (new URLSearchParams(window.location.search).get('auth') === 'success') {
-            fetchDriveSongs();
+
+        // --- LOGIKA PEMUTARAN GOOGLE DRIVE ---
+        async function playMusic(fileId, songTitle, accessToken) {
+            // Hentikan mesin lokal jika sedang menyala
+            if (audioPlayer && !audioPlayer.paused) audioPlayer.pause();
+
+            Swal.fire({
+                title: 'Menyiapkan Audio...', text: songTitle, background: '#222222', color: '#E0E0E0',
+                showConfirmButton: false, didOpen: () => { Swal.showLoading(); }
+            });
+
+            try {
+                const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+                    method: 'GET',
+                    headers: { 'Authorization': `Bearer ${accessToken}` }
+                });
+
+                if (!response.ok) throw new Error(`Google API menolak akses`);
+
+                const audioBlob = await response.blob();
+                const audioUrl = URL.createObjectURL(audioBlob);
+
+                window.omniAudio.src = audioUrl;
+                window.omniAudio.play().then(() => {
+                    Swal.close();
+                    
+                    document.getElementById('player-title').innerText = songTitle;
+                    document.getElementById('player-artist').innerText = "Google Drive";
+                    document.getElementById('icon-play-pause').innerHTML = pauseIcon;
+                    
+                    document.getElementById('mini-player').classList.remove('hidden');
+                    document.getElementById('mini-title').innerText = songTitle;
+                    document.getElementById('icon-mini-play').innerHTML = pauseIcon;
+
+                    if ('mediaSession' in navigator) {
+                        navigator.mediaSession.metadata = new MediaMetadata({ title: songTitle, artist: 'Google Drive - OmniTune' });
+                    }
+                });
+
+            } catch (error) {
+                Swal.fire({ icon: 'error', title: 'Akses Ditolak', text: 'Gagal menarik data.', background: '#222222', color: '#E0E0E0', showConfirmButton: false, timer: 3000 });
+            }
+        }
+
+
+        // --- PROGRESS BAR & WAKTU (GABUNGAN) ---
+        const formatTime = sec => isNaN(sec) ? "0:00" : `${Math.floor(sec / 60)}:${Math.floor(sec % 60).toString().padStart(2, '0')}`;
+        
+        function updateProgressUI(audioElement) {
+            document.getElementById('time-current').innerText = formatTime(audioElement.currentTime);
+            document.getElementById('time-duration').innerText = formatTime(audioElement.duration);
+            if(audioElement.duration) {
+                document.getElementById('progress-fill').style.width = `${(audioElement.currentTime / audioElement.duration) * 100}%`;
+            }
+        }
+
+        // Sinkronisasi untuk Mesin Lokal
+        audioPlayer.addEventListener('timeupdate', () => updateProgressUI(audioPlayer));
+        // Sinkronisasi untuk Mesin Drive
+        window.omniAudio.addEventListener('timeupdate', () => updateProgressUI(window.omniAudio));
+
+        document.getElementById('progress-container').addEventListener('click', (e) => {
+            const activeAudio = (window.omniAudio.src && !window.omniAudio.paused) ? window.omniAudio : audioPlayer;
+            if(activeAudio.duration) {
+                activeAudio.currentTime = (e.offsetX / e.currentTarget.clientWidth) * activeAudio.duration;
+            }
+        });
+
+
+        // --- KONTROL TOMBOL PLAY/PAUSE UMUM ---
+        function togglePlay() {
+            // Tentukan mesin mana yang terakhir digunakan
+            const activeAudio = (window.omniAudio.src && window.omniAudio.currentTime > 0 && !window.omniAudio.ended) ? window.omniAudio : audioPlayer;
+            
+            if (!activeAudio.src) return;
+
+            if (activeAudio.paused) {
+                activeAudio.play();
+                document.getElementById('icon-play-pause').innerHTML = pauseIcon;
+                document.getElementById('icon-mini-play').innerHTML = pauseIcon;
+            } else {
+                activeAudio.pause();
+                document.getElementById('icon-play-pause').innerHTML = playIcon;
+                document.getElementById('icon-mini-play').innerHTML = playIcon;
+            }
+        }
+
+        document.getElementById('btn-play-pause').addEventListener('click', togglePlay);
+        document.getElementById('btn-mini-play').addEventListener('click', (e) => {
+            e.stopPropagation(); 
+            togglePlay();
+        });
+
+
+        // --- LAIN-LAIN ---
+        document.getElementById('mini-player').addEventListener('click', () => {
+            viewLibrary.classList.add('hidden');
+            viewPlayer.classList.remove('hidden');
+        });
+
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js').catch(err => console.log('Pendaftaran ServiceWorker gagal: ', err));
+            });
         }
     </script>
 </body>
