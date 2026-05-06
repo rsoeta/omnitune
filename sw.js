@@ -1,8 +1,9 @@
 const CACHE_NAME = 'omnitune-cache-v1';
 const urlsToCache = [
-    './',
-    './index.html',
-    './manifest.json',
+    '/',
+    '/index.html',
+    '/manifest.json',
+    '/icon-192x192.png'
     // Untuk PWA tingkat lanjut, kita bisa menyimpan CDN Tailwind dan SweetAlert di cache,
     // tapi untuk tahap awal ini, kita cache struktur dasarnya saja.
 ];
