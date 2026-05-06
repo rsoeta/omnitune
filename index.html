@@ -709,16 +709,41 @@
             }
         }
 
-        const btnNext = document.getElementById('btn-next');
-        const btnPrev = document.getElementById('btn-prev');
-        const btnShuffle = document.getElementById('btn-shuffle'); // Pastikan ID ini ada di HTML tombol shuffle Anda!
-        
-        if (btnNext) btnNext.addEventListener('click', playNext);
-        if (btnPrev) btnPrev.addEventListener('click', playPrev);
+        const btnNext = document.getElementById('btn-next'); 
+        const btnPrev = document.getElementById('btn-prev'); 
+        const btnShuffle = document.getElementById('btn-shuffle');
+        if (btnNext) btnNext.addEventListener('click', playNext); 
+        if (btnPrev) btnPrev.addEventListener('click', playPrev); 
         if (btnShuffle) btnShuffle.addEventListener('click', toggleShuffle);
-
-        audioPlayer.addEventListener('ended', playNext);
+        
+        audioPlayer.addEventListener('ended', playNext); 
         window.omniAudio.addEventListener('ended', playNext);
+
+        // =========================================================
+        // --- MEDIA SESSION API (KONTROL KEYBOARD & LOCKSCREEN) ---
+        // =========================================================
+        if ('mediaSession' in navigator) {
+            // 1. Hubungkan tombol Next & Previous keyboard ke fungsi kita
+            navigator.mediaSession.setActionHandler('nexttrack', playNext);
+            navigator.mediaSession.setActionHandler('previoustrack', playPrev);
+            
+            // 2. Sinkronkan tombol Play di keyboard agar ikon UI ikut berubah
+            navigator.mediaSession.setActionHandler('play', () => {
+                const activeAudio = (window.omniAudio.src && window.omniAudio.currentTime > 0 && !window.omniAudio.ended) ? window.omniAudio : audioPlayer;
+                activeAudio.play();
+                document.getElementById('icon-play-pause').innerHTML = pauseIcon;
+                document.getElementById('icon-mini-play').innerHTML = pauseIcon;
+            });
+            
+            // 3. Sinkronkan tombol Pause di keyboard agar ikon UI ikut berubah
+            navigator.mediaSession.setActionHandler('pause', () => {
+                const activeAudio = (window.omniAudio.src && window.omniAudio.currentTime > 0 && !window.omniAudio.ended) ? window.omniAudio : audioPlayer;
+                activeAudio.pause();
+                document.getElementById('icon-play-pause').innerHTML = playIcon;
+                document.getElementById('icon-mini-play').innerHTML = playIcon;
+            });
+        }
+        // =========================================================
 
         // --- PROGRESS BAR & KONTROL PLAY/PAUSE ---
         const formatTime = sec => isNaN(sec) ? "0:00" : `${Math.floor(sec / 60)}:${Math.floor(sec % 60).toString().padStart(2, '0')}`;
