@@ -191,8 +191,10 @@
         const SCOPES = 'https://www.googleapis.com/auth/drive.readonly';
         
         let tokenClient;
-        let userAccessToken = null;
+        // 1. Tarik langsung dari memori saat aplikasi pertama kali bernapas
+        let userAccessToken = localStorage.getItem('omnitune_gdrive_token') || null;
         let pickerApiLoaded = false;
+
         let isReconnecting = false; // Flag baru untuk Auto-Resume
 
         function gapiLoaded() { gapi.load('picker', {'callback': () => { pickerApiLoaded = true; }}); }
@@ -204,50 +206,25 @@
                     if (tokenResponse && tokenResponse.access_token) {
                         userAccessToken = tokenResponse.access_token;
                         
-                        // PERBAIKAN 1: Beri nilai default 3500 detik jika expires_in gagal ditarik agar terhindar dari NaN
-                        const expiresIn = parseInt(tokenResponse.expires_in) || 3500; 
-                        const expiryTime = Date.now() + (expiresIn * 1000);
-                        
+                        // 2. Cukup simpan kuncinya saja. Tidak usah hitung waktu kadaluarsa!
                         localStorage.setItem('omnitune_gdrive_token', userAccessToken);
-                        localStorage.setItem('omnitune_gdrive_expiry', expiryTime.toString());
 
                         if (!isReconnecting) {
                             bukaGooglePicker(); 
                         } else {
-                            // Jika ini proses sambung ulang, langsung putar lagu yang tertunda!
                             isReconnecting = false;
-                            playTrack(currentTrackIndex);
+                            playTrack(currentTrackIndex); // Eksekusi Auto-Resume
                         }
                     }
                 },
             });
         }
+        // Pastikan Anda MENGHAPUS seluruh blok fungsi periksaTokenTersimpan()
 
         function loginDanMuatLibrary(reconnect = false) { 
             // PERBAIKAN 2: Pastikan tipe data boolean, dan biarkan Google mengatur popup secara otomatis tanpa parameter kosong
             isReconnecting = reconnect === true; 
             if (tokenClient) tokenClient.requestAccessToken(); 
-        }
-
-        // --- FUNGSI BARU: Mengecek token secara diam-diam saat reload ---
-        function periksaTokenTersimpan() {
-            const savedToken = localStorage.getItem('omnitune_gdrive_token');
-            const savedExpiry = localStorage.getItem('omnitune_gdrive_expiry');
-            
-            if (savedToken && savedExpiry) {
-                // PERBAIKAN 3: Kalkulasi sisa waktu yang lebih solid dan tahan banting
-                const timeLeft = parseInt(savedExpiry) - Date.now();
-                
-                // Jika sisa waktu masih lebih dari 5 menit (300000 ms), gunakan kembali tokennya
-                if (timeLeft > 300000) {
-                    userAccessToken = savedToken; 
-                } else {
-                    // Bersihkan jika sudah benar-benar kadaluarsa atau datanya rusak
-                    localStorage.removeItem('omnitune_gdrive_token');
-                    localStorage.removeItem('omnitune_gdrive_expiry');
-                    userAccessToken = null;
-                }
-            }
         }
 
         let repeatMode = 'none'; // Pilihan: 'none', 'all', 'one'
@@ -635,9 +612,15 @@
             } 
             // MESIN GOOGLE DRIVE
             else if (track.type === 'drive') {
-                if (!userAccessToken) {
-                    // ... (Alert Sesi Berakhir milik Anda sebelumnya tetap sama) ...
+                
+                // Helper fungsi agar tidak menulis kode panjang berulang-ulang
+                const peringatanSesi = () => {
                     Swal.fire({ title: 'Sesi Berakhir', text: 'Koneksi terputus. Silakan sambungkan kembali.', icon: 'info', background: '#222222', color: '#E0E0E0', confirmButtonColor: '#22c55e', confirmButtonText: 'Sambungkan', showCancelButton: true, cancelButtonText: 'Batal', cancelButtonColor: '#444444' }).then((r) => { if (r.isConfirmed) loginDanMuatLibrary(true); });
+                };
+
+                // Jika token memang benar-benar kosong dari awal
+                if (!userAccessToken) {
+                    peringatanSesi();
                     return; 
                 } 
                 
@@ -645,8 +628,21 @@
 
                 try {
                     const response = await fetch(`https://www.googleapis.com/drive/v3/files/${track.id}?alt=media`, { headers: { 'Authorization': `Bearer ${userAccessToken}` } });
-                    if (!response.ok) throw new Error();
+                    
+                    // 3. TEKNIK OPTIMISTIC: Jika Google mengembalikan Error 401/403 (Kunci ditolak/kadaluarsa)
+                    if (response.status === 401 || response.status === 403) {
+                        localStorage.removeItem('omnitune_gdrive_token');
+                        userAccessToken = null;
+                        Swal.close();
+                        peringatanSesi();
+                        return;
+                    }
+
+                    if (!response.ok) throw new Error("Gagal mengambil file");
+                    
                     const audioBlob = await response.blob();
+                    
+                    // ... (sisa kode ekstrak metadata dan pemutaran audio di bawahnya tetap sama)
                     
                     // --- Ekstrak Metadata Drive ---
                     const meta = await bacaMetadata(audioBlob);
@@ -1008,9 +1004,6 @@
         // INISIALISASI & SERVICE WORKER (PALING BAWAH)
         // ==========================================
         window.addEventListener('DOMContentLoaded', () => {
-            // Panggil fungsi penarik kunci Google di sini
-            periksaTokenTersimpan(); 
-            
             const savedDrive = localStorage.getItem('omnitune_saved_playlist');
             const savedPlaylists = localStorage.getItem('omnitune_custom_playlists');
             
