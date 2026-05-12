@@ -147,9 +147,15 @@
                 </button>
 
             </div>
-            <div class="flex items-center bg-neu-bg shadow-neu-inset rounded-2xl px-4 py-3 mb-2">
-                <svg class="h-5 w-5 text-neu-text mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-                <input type="text" id="input-search" placeholder="Cari lagu, artis, atau album..." class="bg-transparent border-none outline-none text-neu-textDark text-sm w-full">
+            <div class="flex gap-2 mb-2 px-6">
+                <select id="select-playlist" class="bg-neu-bg shadow-neu-inset rounded-xl px-3 py-3 text-neu-textDark text-xs font-bold outline-none border-none cursor-pointer w-1/3">
+                    <option value="all">Semua Lagu</option>
+                </select>
+                
+                <div class="flex-1 flex items-center bg-neu-bg shadow-neu-inset rounded-xl px-4 py-3">
+                    <svg class="h-4 w-4 text-neu-text mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                    <input type="text" id="input-search" placeholder="Cari..." class="bg-transparent border-none outline-none text-neu-textDark text-xs w-full">
+                </div>
             </div>
         </div>
 
@@ -389,6 +395,8 @@
         // --- STATE & DATA (DAFTAR PUTAR GLOBAL) ---
         let globalPlaylist = [];    
         let originalPlaylist = [];  
+        let customPlaylists = {};   // { "Nama Playlist": ["id_lagu_1", "id_lagu_2"] }
+        let currentActivePlaylist = "all";
         let currentTrackIndex = -1; 
         let isShuffle = false;      
 
@@ -483,34 +491,36 @@
             container.innerHTML = ''; 
 
             if (listToRender.length === 0) {
-                container.innerHTML = '<div class="text-center text-neu-text mt-10 text-sm">Tidak ada lagu ditemukan.</div>'; return;
+                container.innerHTML = '<div class="text-center text-neu-text mt-10 text-sm">Tidak ada lagu di daftar ini.</div>'; return;
             }
 
+            const DEFAULT_COVER = "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=200&auto=format&fit=crop";
+
             listToRender.forEach((track) => {
-                const icon = track.type === 'local' ? '<i class="fa-solid fa-music"></i>' : '<i class="fa-solid fa-cloud"></i>';
-                
-                // Prioritaskan Metadata. Jika kosong, gunakan nama file/sumber asli
                 const displayTitle = track.title || track.originalName;
                 const displayArtist = track.artist || (track.type === 'local' ? 'Memori Lokal' : 'Google Drive');
                 
-                // Cari index asli dari lagu ini di globalPlaylist untuk pemutaran yang tepat
                 const realIndex = globalPlaylist.indexOf(track);
                 const isActive = realIndex === currentTrackIndex ? 'text-green-500' : 'text-neu-textDark';
+                const activeCover = track.cover || DEFAULT_COVER;
                 
                 const div = document.createElement('div');
-                div.className = 'flex items-center justify-between p-4 mb-3 bg-neu-bg rounded-xl shadow-neu hover:shadow-neu-inset cursor-pointer transition-all group';
+                div.className = 'flex items-center justify-between p-3 mb-3 bg-neu-bg rounded-xl shadow-neu hover:shadow-neu-inset cursor-pointer transition-all group';
+                
                 div.innerHTML = `
-                    <div class="flex items-center gap-4 overflow-hidden w-full">
-                        <div class="w-10 h-10 flex-shrink-0 rounded-full shadow-neu-inset flex items-center justify-center text-neu-text">
-                            ${icon}
+                    <div class="flex items-center gap-4 overflow-hidden w-full" onclick="playTrack(${realIndex})">
+                        <div class="w-12 h-12 flex-shrink-0 rounded-lg shadow-neu-inset p-1">
+                            <img src="${activeCover}" class="w-full h-full object-cover rounded-md">
                         </div>
                         <div class="flex-1 min-w-0 pr-2">
                             <h4 class="text-sm font-bold ${isActive} truncate group-hover:text-green-500 transition-colors">${displayTitle}</h4>
-                            <p class="text-xs text-neu-text truncate">${displayArtist} ${track.album ? '• ' + track.album : ''}</p>
+                            <p class="text-[10px] text-neu-text truncate">${displayArtist} ${track.album ? '• ' + track.album : ''}</p>
                         </div>
                     </div>
+                    <button onclick="bukaMenuLagu(event, ${realIndex})" class="p-2 text-neu-text hover:text-neu-textDark transition-colors rounded-full active:bg-neutral-800">
+                        <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+                    </button>
                 `;
-                div.onclick = () => playTrack(realIndex);
                 container.appendChild(div);
             });
         }
@@ -784,15 +794,175 @@
         document.getElementById('mini-player').addEventListener('click', () => { viewLibrary.classList.add('hidden'); viewPlayer.classList.remove('hidden'); });
 
         
-        if ('serviceWorker' in navigator) {
-            // --- MEMUAT MEMORI PLAYLIST SAAT APLIKASI DIBUKA ---
-            window.addEventListener('DOMContentLoaded', () => {
-                const savedData = localStorage.getItem('omnitune_saved_playlist');
-                if (savedData) {
-                    globalPlaylist = JSON.parse(savedData);
-                    persiapkanPlaylist();
+        // ==========================================
+        // FITUR MENU TITIK TIGA & PLAYLIST
+        // ==========================================
+
+        window.bukaMenuLagu = function(event, index) {
+            event.stopPropagation(); 
+            const track = globalPlaylist[index];
+            const title = track.title || track.originalName;
+
+            Swal.fire({
+                title: `<span class="text-sm font-bold truncate block w-full px-4">${title}</span>`,
+                html: `
+                    <div class="flex flex-col gap-3 mt-4 px-2">
+                        <button onclick="menuTambahPlaylist(${index})" class="py-3 bg-neu-bg shadow-neu-btn rounded-xl text-neu-textDark text-sm font-bold active:shadow-neu-inset transition-all">Tambah ke Playlist</button>
+                        <button onclick="menuBagikan(${index})" class="py-3 bg-neu-bg shadow-neu-btn rounded-xl text-neu-textDark text-sm font-bold active:shadow-neu-inset transition-all">Bagikan Info</button>
+                        <button onclick="menuRincian(${index})" class="py-3 bg-neu-bg shadow-neu-btn rounded-xl text-neu-textDark text-sm font-bold active:shadow-neu-inset transition-all">Rincian File</button>
+                        <button onclick="menuHapus(${index})" class="py-3 bg-neu-bg shadow-neu-btn rounded-xl text-red-500 text-sm font-bold active:shadow-neu-inset transition-all">Hapus Lagu</button>
+                    </div>
+                `,
+                showConfirmButton: false, showCloseButton: true, background: '#222222',
+                customClass: { popup: 'rounded-[32px] shadow-neu border-none w-80 pb-6', closeButton: 'text-neu-text hover:text-red-500' }
+            });
+        };
+
+        window.menuRincian = function(index) {
+            const track = globalPlaylist[index];
+            Swal.fire({
+                title: 'Rincian Lagu',
+                html: `<div class="text-left text-xs text-neu-text mt-2 space-y-2">
+                        <p><b>Judul File:</b> <span class="text-neu-textDark">${track.originalName}</span></p>
+                        <p><b>Artis:</b> <span class="text-neu-textDark">${track.artist || 'Tidak ada data'}</span></p>
+                        <p><b>Album:</b> <span class="text-neu-textDark">${track.album || 'Tidak ada data'}</span></p>
+                        <p><b>Sumber:</b> <span class="text-accent">${track.type === 'drive' ? 'Google Drive' : 'File Lokal'}</span></p>
+                       </div>`,
+                background: '#222222', color: '#E0E0E0', confirmButtonColor: '#22c55e'
+            });
+        };
+
+        window.menuBagikan = function(index) {
+            const track = globalPlaylist[index];
+            const textToShare = `Lagi dengerin "${track.title || track.originalName}" by ${track.artist || 'Unknown Artist'} di OmniTune Player!`;
+            if (navigator.share) {
+                navigator.share({ title: 'OmniTune', text: textToShare }).catch(console.error);
+                Swal.close();
+            } else {
+                navigator.clipboard.writeText(textToShare);
+                Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Teks disalin ke clipboard!', showConfirmButton: false, timer: 2000, background: '#222222', color: '#E0E0E0' });
+            }
+        };
+
+        window.menuHapus = function(index) {
+            Swal.fire({
+                title: 'Hapus Lagu?', text: "Lagu akan dihapus dari daftar aplikasi secara permanen.", icon: 'warning',
+                background: '#222222', color: '#E0E0E0', showCancelButton: true, confirmButtonColor: '#ef4444', cancelButtonColor: '#444', confirmButtonText: 'Ya, Hapus'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    const trackId = globalPlaylist[index].id;
+                    globalPlaylist.splice(index, 1);
+                    for (let p in customPlaylists) {
+                        customPlaylists[p] = customPlaylists[p].filter(id => id !== trackId);
+                    }
+                    persiapkanPlaylist(); 
+                    Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Dihapus', showConfirmButton: false, timer: 1500, background: '#222222', color: '#E0E0E0' });
                 }
             });
+        };
+
+        window.menuTambahPlaylist = async function(index) {
+            const trackId = globalPlaylist[index].id;
+            const namaPlaylistYangAda = Object.keys(customPlaylists);
+            
+            let htmlOpsi = `<button id="btn-buat-baru" class="w-full py-3 mb-2 bg-green-500 text-white rounded-xl font-bold shadow-neu-btn active:scale-95 transition-all">+ Buat Playlist Baru</button>`;
+            
+            if (namaPlaylistYangAda.length > 0) {
+                htmlOpsi += `<div class="text-xs text-neu-text mt-4 mb-2 font-bold text-left px-2">Atau pilih yang sudah ada:</div>`;
+                namaPlaylistYangAda.forEach(nama => {
+                    htmlOpsi += `<button onclick="masukkanKePlaylist('${nama}', '${trackId}')" class="w-full py-3 mb-2 bg-neu-bg text-neu-textDark rounded-xl shadow-neu-btn active:shadow-neu-inset transition-all">${nama}</button>`;
+                });
+            }
+
+            Swal.fire({
+                title: 'Simpan ke...', html: htmlOpsi, showConfirmButton: false, showCloseButton: true, background: '#222222', customClass: { popup: 'rounded-[32px] shadow-neu border-none w-80 pb-6', closeButton: 'text-neu-text hover:text-red-500' },
+                didOpen: () => {
+                    document.getElementById('btn-buat-baru').addEventListener('click', async () => {
+                        Swal.close();
+                        const { value: namaBaru } = await Swal.fire({
+                            title: 'Nama Playlist', input: 'text', inputPlaceholder: 'Misal: Lagu Galau', background: '#222222', color: '#E0E0E0', confirmButtonColor: '#22c55e', showCancelButton: true
+                        });
+                        if (namaBaru && namaBaru.trim() !== '') {
+                            if (!customPlaylists[namaBaru]) customPlaylists[namaBaru] = [];
+                            masukkanKePlaylist(namaBaru, trackId);
+                            updateDropdownPlaylist();
+                        }
+                    });
+                }
+            });
+        };
+
+        window.masukkanKePlaylist = function(namaPlaylist, trackId) {
+            if (!customPlaylists[namaPlaylist].includes(trackId)) {
+                customPlaylists[namaPlaylist].push(trackId);
+                simpanKeLokal();
+                Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: `Masuk ke ${namaPlaylist}`, showConfirmButton: false, timer: 2000, background: '#222222', color: '#E0E0E0' });
+            } else {
+                Swal.fire({ toast: true, position: 'top-end', icon: 'info', title: 'Sudah ada di playlist ini', showConfirmButton: false, timer: 2000, background: '#222222', color: '#E0E0E0' });
+            }
+        };
+
+        function simpanKeLokal() {
+            localStorage.setItem('omnitune_custom_playlists', JSON.stringify(customPlaylists));
+            const driveSongs = globalPlaylist.filter(song => song.type === 'drive');
+            localStorage.setItem('omnitune_saved_playlist', JSON.stringify(driveSongs));  
+        }
+
+        function persiapkanPlaylist() {
+            originalPlaylist = [...globalPlaylist]; 
+            if (isShuffle) acakDaftarLagu();        
+            saringLibrary(); 
+            simpanKeLokal();               
+        }
+
+        function updateDropdownPlaylist() {
+            const select = document.getElementById('select-playlist');
+            select.innerHTML = '<option value="all">Semua Lagu</option>';
+            Object.keys(customPlaylists).forEach(nama => {
+                const opt = document.createElement('option');
+                opt.value = nama; opt.text = nama;
+                select.appendChild(opt);
+            });
+        }
+
+        function saringLibrary() {
+            const keyword = document.getElementById('input-search').value.toLowerCase();
+            const modePlaylist = document.getElementById('select-playlist').value;
+            
+            let filteredList = globalPlaylist;
+
+            if (modePlaylist !== "all" && customPlaylists[modePlaylist]) {
+                filteredList = filteredList.filter(track => customPlaylists[modePlaylist].includes(track.id));
+            }
+
+            if (keyword !== "") {
+                filteredList = filteredList.filter(track => {
+                    const dataPencarian = `${track.originalName || ''} ${track.title || ''} ${track.artist || ''} ${track.album || ''}`.toLowerCase();
+                    return dataPencarian.includes(keyword);
+                });
+            }
+            renderUnifiedLibrary(filteredList);
+        }
+
+        document.getElementById('input-search').addEventListener('input', saringLibrary);
+        document.getElementById('select-playlist').addEventListener('change', saringLibrary);
+
+        // ==========================================
+        // INISIALISASI & SERVICE WORKER (PALING BAWAH)
+        // ==========================================
+
+        window.addEventListener('DOMContentLoaded', () => {
+            const savedDrive = localStorage.getItem('omnitune_saved_playlist');
+            const savedPlaylists = localStorage.getItem('omnitune_custom_playlists');
+            
+            if (savedPlaylists) customPlaylists = JSON.parse(savedPlaylists);
+            if (savedDrive) { globalPlaylist = JSON.parse(savedDrive); }
+            
+            updateDropdownPlaylist();
+            persiapkanPlaylist();
+        });
+
+        if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(err => console.log('SW Gagal', err)));
         }
     </script>
