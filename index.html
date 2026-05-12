@@ -658,16 +658,19 @@
             }
         }
 
-        // --- UPDATE EVENT ENDED ---
+// --- UPDATE EVENT ENDED (DIPERBARUI) ---
         const handleEnded = () => {
             if (repeatMode === 'one') {
-                // Putar ulang lagu yang sama
-                playTrack(currentTrackIndex);
+                // Jangan gunakan playTrack(). Cukup putar ulang ke detik 0 (tanpa loading)
+                const activeAudio = (window.omniAudio.src && !window.omniAudio.paused || window.omniAudio.currentTime > 0) ? window.omniAudio : audioPlayer;
+                activeAudio.currentTime = 0;
+                activeAudio.play();
             } else {
                 playNext();
             }
         };
 
+        // Pastikan tidak ada deklarasi ended lain selain dua baris ini
         audioPlayer.addEventListener('ended', handleEnded);
         window.omniAudio.addEventListener('ended', handleEnded);
 
@@ -726,9 +729,6 @@
         if (btnPrev) btnPrev.addEventListener('click', playPrev); 
         if (btnShuffle) btnShuffle.addEventListener('click', toggleShuffle);
         
-        audioPlayer.addEventListener('ended', playNext); 
-        window.omniAudio.addEventListener('ended', playNext);
-
         // =========================================================
         // --- MEDIA SESSION API (KONTROL KEYBOARD & LOCKSCREEN) ---
         // =========================================================
