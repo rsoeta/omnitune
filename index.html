@@ -204,10 +204,12 @@
                     if (tokenResponse && tokenResponse.access_token) {
                         userAccessToken = tokenResponse.access_token;
                         
-                        // Simpan token beserta waktu matinya (berlaku 1 jam) ke memori lokal
-                        const expiryTime = Date.now() + (tokenResponse.expires_in * 1000);
+                        // PERBAIKAN 1: Beri nilai default 3500 detik jika expires_in gagal ditarik agar terhindar dari NaN
+                        const expiresIn = parseInt(tokenResponse.expires_in) || 3500; 
+                        const expiryTime = Date.now() + (expiresIn * 1000);
+                        
                         localStorage.setItem('omnitune_gdrive_token', userAccessToken);
-                        localStorage.setItem('omnitune_gdrive_expiry', expiryTime);
+                        localStorage.setItem('omnitune_gdrive_expiry', expiryTime.toString());
 
                         if (!isReconnecting) {
                             bukaGooglePicker(); 
@@ -221,10 +223,10 @@
             });
         }
 
-        // Tambahkan parameter true/false untuk membedakan niat login
         function loginDanMuatLibrary(reconnect = false) { 
-            isReconnecting = reconnect;
-            if (tokenClient) tokenClient.requestAccessToken({prompt: ''}); 
+            // PERBAIKAN 2: Pastikan tipe data boolean, dan biarkan Google mengatur popup secara otomatis tanpa parameter kosong
+            isReconnecting = reconnect === true; 
+            if (tokenClient) tokenClient.requestAccessToken(); 
         }
 
         // --- FUNGSI BARU: Mengecek token secara diam-diam saat reload ---
@@ -233,13 +235,17 @@
             const savedExpiry = localStorage.getItem('omnitune_gdrive_expiry');
             
             if (savedToken && savedExpiry) {
-                // Beri jeda aman 5 menit sebelum benar-benar mati
-                if (Date.now() < (parseInt(savedExpiry) - 300000)) {
-                    userAccessToken = savedToken; // Token ditarik lagi tanpa popup!
+                // PERBAIKAN 3: Kalkulasi sisa waktu yang lebih solid dan tahan banting
+                const timeLeft = parseInt(savedExpiry) - Date.now();
+                
+                // Jika sisa waktu masih lebih dari 5 menit (300000 ms), gunakan kembali tokennya
+                if (timeLeft > 300000) {
+                    userAccessToken = savedToken; 
                 } else {
-                    // Bersihkan jika sudah kadaluarsa
+                    // Bersihkan jika sudah benar-benar kadaluarsa atau datanya rusak
                     localStorage.removeItem('omnitune_gdrive_token');
                     localStorage.removeItem('omnitune_gdrive_expiry');
+                    userAccessToken = null;
                 }
             }
         }
