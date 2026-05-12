@@ -193,6 +193,57 @@
         let tokenClient;
         let userAccessToken = null;
         let pickerApiLoaded = false;
+        let isReconnecting = false; // Flag baru untuk Auto-Resume
+
+        function gapiLoaded() { gapi.load('picker', {'callback': () => { pickerApiLoaded = true; }}); }
+        
+        function gisLoaded() {
+            tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: CLIENT_ID, scope: SCOPES,
+                callback: (tokenResponse) => {
+                    if (tokenResponse && tokenResponse.access_token) {
+                        userAccessToken = tokenResponse.access_token;
+                        
+                        // Simpan token beserta waktu matinya (berlaku 1 jam) ke memori lokal
+                        const expiryTime = Date.now() + (tokenResponse.expires_in * 1000);
+                        localStorage.setItem('omnitune_gdrive_token', userAccessToken);
+                        localStorage.setItem('omnitune_gdrive_expiry', expiryTime);
+
+                        if (!isReconnecting) {
+                            bukaGooglePicker(); 
+                        } else {
+                            // Jika ini proses sambung ulang, langsung putar lagu yang tertunda!
+                            isReconnecting = false;
+                            playTrack(currentTrackIndex);
+                        }
+                    }
+                },
+            });
+        }
+
+        // Tambahkan parameter true/false untuk membedakan niat login
+        function loginDanMuatLibrary(reconnect = false) { 
+            isReconnecting = reconnect;
+            if (tokenClient) tokenClient.requestAccessToken({prompt: ''}); 
+        }
+
+        // --- FUNGSI BARU: Mengecek token secara diam-diam saat reload ---
+        function periksaTokenTersimpan() {
+            const savedToken = localStorage.getItem('omnitune_gdrive_token');
+            const savedExpiry = localStorage.getItem('omnitune_gdrive_expiry');
+            
+            if (savedToken && savedExpiry) {
+                // Beri jeda aman 5 menit sebelum benar-benar mati
+                if (Date.now() < (parseInt(savedExpiry) - 300000)) {
+                    userAccessToken = savedToken; // Token ditarik lagi tanpa popup!
+                } else {
+                    // Bersihkan jika sudah kadaluarsa
+                    localStorage.removeItem('omnitune_gdrive_token');
+                    localStorage.removeItem('omnitune_gdrive_expiry');
+                }
+            }
+        }
+
         let repeatMode = 'none'; // Pilihan: 'none', 'all', 'one'
 
         // --- MENGAMBIL KUNCI SECARA DINAMIS DARI GOOGLE SHEET ---
@@ -580,7 +631,7 @@
             else if (track.type === 'drive') {
                 if (!userAccessToken) {
                     // ... (Alert Sesi Berakhir milik Anda sebelumnya tetap sama) ...
-                    Swal.fire({ title: 'Sesi Berakhir', text: 'Koneksi terputus. Silakan sambungkan kembali.', icon: 'info', background: '#222222', color: '#E0E0E0', confirmButtonColor: '#22c55e', confirmButtonText: 'Sambungkan', showCancelButton: true, cancelButtonText: 'Batal', cancelButtonColor: '#444444' }).then((r) => { if (r.isConfirmed) loginDanMuatLibrary(); });
+                    Swal.fire({ title: 'Sesi Berakhir', text: 'Koneksi terputus. Silakan sambungkan kembali.', icon: 'info', background: '#222222', color: '#E0E0E0', confirmButtonColor: '#22c55e', confirmButtonText: 'Sambungkan', showCancelButton: true, cancelButtonText: 'Batal', cancelButtonColor: '#444444' }).then((r) => { if (r.isConfirmed) loginDanMuatLibrary(true); });
                     return; 
                 } 
                 
@@ -950,8 +1001,10 @@
         // ==========================================
         // INISIALISASI & SERVICE WORKER (PALING BAWAH)
         // ==========================================
-
         window.addEventListener('DOMContentLoaded', () => {
+            // Panggil fungsi penarik kunci Google di sini
+            periksaTokenTersimpan(); 
+            
             const savedDrive = localStorage.getItem('omnitune_saved_playlist');
             const savedPlaylists = localStorage.getItem('omnitune_custom_playlists');
             
