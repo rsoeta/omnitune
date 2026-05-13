@@ -63,6 +63,34 @@
         }
     </script>
 
+<style>
+        .marquee-container {
+            width: 100%;
+            overflow: hidden;
+            white-space: nowrap;
+            position: relative;
+            /* Efek pudar transparan di ujung kiri dan kanan agar terlihat elegan */
+            -webkit-mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
+            mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
+        }
+
+        .marquee-text {
+            display: inline-block;
+            white-space: nowrap;
+            padding-left: 100%; /* Mulai masuk dari ujung layar sebelah kanan */
+            animation: jalanTerus 12s linear infinite; /* 12s adalah kecepatan, bisa diubah */
+        }
+
+        /* Saat disentuh/ditekan, teks berhenti berjalan agar mudah dibaca */
+        .marquee-text:hover, .marquee-text:active {
+            animation-play-state: paused;
+        }
+
+        @keyframes jalanTerus {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-100%); }
+        }
+    </style>
 </head>
 <body class="bg-neu-bg min-h-screen flex items-center justify-center font-sans p-4">
 
@@ -89,10 +117,17 @@
             <img id="player-cover" src="https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=600&auto=format&fit=crop" class="w-full h-full object-cover rounded-[24px]">
         </div>
 
-        <div class="text-center mb-8">
-            <h1 id="player-title" class="text-neu-textDark font-bold text-xl mb-1 truncate px-2">Belum ada lagu</h1>
-            <p id="player-artist" class="text-neu-text text-sm">Pilih dari Library</p>
+        <div class="mt-8 mb-6 px-4 text-center">
+            <div class="marquee-container h-8 flex items-center">
+                <h2 id="player-title" class="marquee-text text-xl font-bold text-neu-textDark tracking-wide">
+                    Pilih Lagu Untuk Memutar
+                </h2>
+            </div>
+            <p id="player-artist" class="text-sm text-neu-text mt-1 truncate">
+                OmniTune Player
+            </p>
         </div>
+
 
         <div class="flex items-center text-[10px] text-neu-text mb-8">
             <span id="time-current">0:00</span>
