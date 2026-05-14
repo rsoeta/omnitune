@@ -103,11 +103,12 @@
     <!-- ========================================== -->
     <div id="view-player" class="w-full max-w-[340px] bg-neu-bg rounded-[40px] shadow-neu p-6 relative overflow-hidden transition-all duration-300">
         <div class="flex justify-between items-center text-neu-text mb-6">
-            <button class="w-10 h-10 rounded-full shadow-neu-btn flex items-center justify-center">
-                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
+            <button id="btn-delete-current" class="w-10 h-10 rounded-full shadow-neu-btn flex items-center justify-center active:shadow-neu-inset text-neu-text hover:text-red-500 transition-colors">
+                <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
             </button>
-            <span class="text-xs font-bold tracking-widest">NOW PLAYING</span>
-            <!-- Tombol ke Library -->
+            
+            <span class="text-xs font-bold tracking-widest">Now Playing</span>
+            
             <button id="btn-go-library" class="w-10 h-10 rounded-full shadow-neu-btn flex items-center justify-center active:shadow-neu-inset">
                 <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" /></svg>
             </button>
@@ -948,6 +949,53 @@
                 }
             });
         };
+
+        // --- FITUR HAPUS DI NOW PLAYING ---
+        document.getElementById('btn-delete-current').addEventListener('click', () => {
+            // Cegah error jika tidak ada lagu yang sedang aktif
+            if (currentTrackIndex < 0 || currentTrackIndex >= globalPlaylist.length) return;
+            
+            Swal.fire({
+                title: 'Hapus Lagu Ini?', 
+                text: "Lagu yang sedang diputar akan dihapus dari aplikasi.", 
+                icon: 'warning',
+                background: '#222222', color: '#E0E0E0', 
+                showCancelButton: true, confirmButtonColor: '#ef4444', cancelButtonColor: '#444', confirmButtonText: 'Ya, Hapus'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    const trackId = globalPlaylist[currentTrackIndex].id;
+                    
+                    // 1. Cabut lagu dari daftar putar global dan custom playlist
+                    globalPlaylist.splice(currentTrackIndex, 1);
+                    for (let p in customPlaylists) {
+                        customPlaylists[p] = customPlaylists[p].filter(id => id !== trackId);
+                    }
+                    persiapkanPlaylist(); 
+                    
+                    // 2. Bungkam audio yang sedang berjalan
+                    if (!audioPlayer.paused) audioPlayer.pause();
+                    if (window.omniAudio && !window.omniAudio.paused) window.omniAudio.pause();
+                    
+                    // 3. Putar lagu berikutnya, atau bersihkan layar jika lagu habis
+                    if (globalPlaylist.length > 0) {
+                        // Karena array mengecil, currentTrackIndex sekarang otomatis menunjuk ke lagu "berikutnya"
+                        let nextIndex = currentTrackIndex;
+                        if (nextIndex >= globalPlaylist.length) nextIndex = 0; // Ulang ke atas jika di ujung
+                        playTrack(nextIndex);
+                    } else {
+                        // Reset UI menjadi kosong
+                        currentTrackIndex = -1;
+                        document.getElementById('player-title').innerText = "Pilih Lagu Untuk Memutar";
+                        document.getElementById('player-artist').innerText = "OmniTune Player";
+                        document.getElementById('icon-play-pause').innerHTML = playIcon;
+                        document.getElementById('mini-player').classList.add('hidden');
+                        document.getElementById('player-cover').src = "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=600&auto=format&fit=crop";
+                    }
+                    
+                    Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Lagu Dihapus', showConfirmButton: false, timer: 1500, background: '#222222', color: '#E0E0E0' });
+                }
+            });
+        });
 
         window.menuTambahPlaylist = async function(index) {
             const trackId = globalPlaylist[index].id;
